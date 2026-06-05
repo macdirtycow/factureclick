@@ -25,11 +25,12 @@ struct ClientListView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
 
-            if filteredClients.isEmpty {
-                emptyState
-            } else {
-            List {
-                ForEach(filteredClients) { client in
+            Group {
+                if filteredClients.isEmpty {
+                    emptyState
+                } else {
+                    List {
+                        ForEach(filteredClients) { client in
                     NavigationLink {
                         ClientDetailView(client: client)
                     } label: {
@@ -63,10 +64,11 @@ struct ClientListView: View {
                             delete(client)
                         }
                     }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
             }
             .background(AppTheme.screenBackground)
         }
