@@ -25,11 +25,12 @@ struct ProductListView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
 
-            if filteredProducts.isEmpty {
-                emptyState
-            } else {
-            List {
-                ForEach(filteredProducts) { product in
+            Group {
+                if filteredProducts.isEmpty {
+                    emptyState
+                } else {
+                    List {
+                        ForEach(filteredProducts) { product in
                     NavigationLink {
                         ProductDetailView(product: product)
                     } label: {
@@ -57,10 +58,11 @@ struct ProductListView: View {
                             delete(product)
                         }
                     }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
             }
             .background(AppTheme.screenBackground)
         }
