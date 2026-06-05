@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import SwiftData
 
 @Observable
 final class QuoteFormViewModel {
@@ -81,6 +82,7 @@ final class QuoteFormViewModel {
         existingQuotes: [Quote],
         invoicePrefix: String,
         sequencePadding: Int,
+        activeCompanyProfile: CompanyProfile?,
         in context: ModelContext
     ) throws {
         guard let selectedClientID,
@@ -89,6 +91,11 @@ final class QuoteFormViewModel {
         }
 
         let repository = QuoteRepository()
+        let companyProfile = CompanyProfileSelectionService().resolveQuoteProfile(
+            explicitProfile: quote?.companyProfile,
+            client: client,
+            fallbackActiveProfile: activeCompanyProfile
+        )
         let target = quote ?? Quote(
             quoteNumber: repository.nextQuoteNumber(
                 existingQuotes: existingQuotes,
@@ -96,10 +103,12 @@ final class QuoteFormViewModel {
                 prefix: invoicePrefix.isEmpty ? "Q" : "\(invoicePrefix)-Q",
                 sequencePadding: sequencePadding
             ),
-            client: client
+            client: client,
+            companyProfile: companyProfile
         )
 
         target.client = client
+        target.companyProfile = companyProfile
         target.date = quoteDate
         target.expiryDate = expiryDate
         target.status = status
@@ -110,6 +119,9 @@ final class QuoteFormViewModel {
         target.updatedAt = .now
 
         let productsByID = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0) })
+        for existingLine in target.lines {
+            context.delete(existingLine)
+        }
         target.lines.removeAll()
         target.lines = validLineDrafts.map { line in
             QuoteLine(

@@ -149,7 +149,7 @@ struct DataImportExportService {
 
     func executeImport(_ result: ImportPreviewResult, in context: ModelContext) throws -> ImportExecutionSummary {
         var successCount = 0
-        var errorMessages = result.errors
+        let errorMessages = result.errors
 
         for item in result.items where item.isValid {
             switch item.payload {
@@ -244,7 +244,7 @@ struct DataImportExportService {
             }
         )
 
-        let url = try makeExportURL(fileName: "Factureclick-Backup-\(timestamp()).json")
+        let url = try makeExportURL(fileName: "\(AppBrand.displayName)-Backup-\(timestamp()).json")
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -266,7 +266,7 @@ struct DataImportExportService {
                 String($0.isInvoiced)
             ]
         }
-        return try writeCSV(rows: [header] + rows, fileName: "Factureclick-Registrations-\(timestamp()).csv", title: "Registrations export")
+        return try writeCSV(rows: [header] + rows, fileName: "\(AppBrand.displayName)-Registrations-\(timestamp()).csv", title: "Registrations export")
     }
 
     func exportInvoices(_ invoices: [Invoice]) throws -> ExportedDataFile {
@@ -285,7 +285,7 @@ struct DataImportExportService {
                 $0.notes
             ]
         }
-        return try writeCSV(rows: [header] + rows, fileName: "Factureclick-Invoices-\(timestamp()).csv", title: "Invoices export")
+        return try writeCSV(rows: [header] + rows, fileName: "\(AppBrand.displayName)-Invoices-\(timestamp()).csv", title: "Invoices export")
     }
 
     private func previewClients(records: [[String]], header: [String], sourceFileName: String) -> ImportPreviewResult {

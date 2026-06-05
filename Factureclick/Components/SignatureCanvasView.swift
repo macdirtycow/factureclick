@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SignatureCanvasView: View {
     @Binding var drawing: SignatureDrawing
+    let placeholderText: String
 
     var body: some View {
         GeometryReader { geometry in
@@ -17,7 +18,7 @@ struct SignatureCanvasView: View {
                     .fill(AppTheme.elevatedBackground)
 
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(AppTheme.border, style: StrokeStyle(lineWidth: 1, dash: [6, 6]))
+                    .strokeBorder(AppTheme.secondaryText.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [6, 6]))
 
                 Canvas { context, size in
                     for stroke in drawing.strokes where !stroke.points.isEmpty {
@@ -48,7 +49,7 @@ struct SignatureCanvasView: View {
                         Image(systemName: "signature")
                             .font(.system(size: 28, weight: .semibold))
                             .foregroundStyle(AppTheme.secondaryText)
-                        Text("Sign here")
+                        Text(placeholderText)
                             .font(AppTheme.captionFont)
                             .foregroundStyle(AppTheme.secondaryText)
                     }

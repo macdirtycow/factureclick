@@ -10,6 +10,7 @@ import SwiftUI
 struct RevenueSplitCard: View {
     let title: String
     let summary: CollaborationRevenueSummary
+    let localization: AppLocalization
 
     var body: some View {
         SectionCard {
@@ -18,9 +19,9 @@ struct RevenueSplitCard: View {
                     .font(AppTheme.sectionTitleFont)
                     .foregroundStyle(AppTheme.primaryText)
 
-                splitRow("Gross", currency(summary.grossAmount))
-                splitRow("Partner share", currency(summary.partnerShare))
-                splitRow("You keep", currency(summary.userNetAmount), emphasize: true)
+                splitRow(localization.phrase("Gross"), currency(summary.grossAmount))
+                splitRow(localization.phrase("Partner share"), currency(summary.partnerShare))
+                splitRow(localization.phrase("You keep"), currency(summary.userNetAmount), emphasize: true)
 
                 if !summary.partnerSummaries.isEmpty {
                     Divider()

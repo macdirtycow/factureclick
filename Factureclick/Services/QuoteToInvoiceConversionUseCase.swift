@@ -12,6 +12,7 @@ struct QuoteInvoiceDraftContext: Equatable {
     let quoteID: UUID
     let quoteNumber: String
     let clientID: UUID
+    let companyProfileID: UUID?
     let invoiceDate: Date
     let dueDate: Date
     let notes: String
@@ -22,6 +23,7 @@ struct QuoteInvoiceDraftContext: Equatable {
             quoteID.uuidString,
             quoteNumber,
             clientID.uuidString,
+            companyProfileID?.uuidString ?? "nil",
             String(invoiceDate.timeIntervalSince1970),
             String(dueDate.timeIntervalSince1970),
             lineDrafts.map(\.id.uuidString).joined(separator: ",")
@@ -76,7 +78,7 @@ struct QuoteToInvoiceConversionUseCase {
             throw QuoteToInvoiceConversionError.quoteAlreadyConverted
         }
 
-        let invoiceDate = .now
+        let invoiceDate = Date.now
         let dueDate = Calendar.current.date(byAdding: .day, value: quote.client.paymentTermDays > 0 ? quote.client.paymentTermDays : defaultPaymentTermDays, to: invoiceDate) ?? invoiceDate
         let notes = ([ "Converted from quote \(quote.quoteNumber)", quote.notes.trimmingCharacters(in: .whitespacesAndNewlines) ]
             .filter { !$0.isEmpty })
@@ -86,6 +88,7 @@ struct QuoteToInvoiceConversionUseCase {
             quoteID: quote.id,
             quoteNumber: quote.quoteNumber,
             clientID: quote.client.id,
+            companyProfileID: quote.companyProfile?.id,
             invoiceDate: invoiceDate,
             dueDate: dueDate,
             notes: notes,
@@ -108,10 +111,14 @@ struct QuoteToInvoiceConversionUseCase {
         dueDate: Date,
         notes: String,
         lineDrafts: [InvoiceLineDraft],
+        documentType: InvoiceDocumentType = .standard,
         existingInvoices: [Invoice],
         quotes: [Quote],
         clients: [Client],
+        companyProfiles: [CompanyProfile],
+        activeCompanyProfile: CompanyProfile?,
         invoiceNumberPrefix: String,
+        creditInvoiceNumberPrefix: String = "CR",
         invoiceNumberSequencePadding: Int,
         context: ModelContext
     ) throws -> Invoice {
@@ -132,22 +139,35 @@ struct QuoteToInvoiceConversionUseCase {
         }
 
         let totals = calculationService.makeTotals(lines: lineDrafts, collaborationRule: nil)
-        let invoice = Invoice(
-            invoiceNumber: invoiceRepository.nextInvoiceNumber(
+        let companyProfile = companyProfiles.first(where: { $0.id == draftContext.companyProfileID })
+            ?? client.companyProfile
+            ?? activeCompanyProfile
+        let invoiceNumber = documentType == .credit
+            ? invoiceRepository.nextCreditInvoiceNumber(
+                existingInvoices: existingInvoices,
+                invoiceDate: invoiceDate,
+                prefix: creditInvoiceNumberPrefix,
+                sequencePadding: invoiceNumberSequencePadding
+            )
+            : invoiceRepository.nextInvoiceNumber(
                 existingInvoices: existingInvoices,
                 invoiceDate: invoiceDate,
                 prefix: invoiceNumberPrefix,
                 sequencePadding: invoiceNumberSequencePadding
-            ),
+            )
+        let invoice = Invoice(
+            invoiceNumber: invoiceNumber,
             client: client,
             date: invoiceDate,
             dueDate: dueDate,
+            documentType: documentType,
             status: .draft,
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             totalAmount: totals.total,
             vatAmount: totals.vat,
             createdAt: .now,
-            sourceQuote: quote
+            sourceQuote: quote,
+            companyProfile: companyProfile
         )
 
         invoice.lines = lineDrafts.map {

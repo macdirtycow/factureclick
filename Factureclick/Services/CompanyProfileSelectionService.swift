@@ -15,7 +15,15 @@ struct CompanyProfileSelectionService {
             return activeProfile
         }
 
-        return profiles.sorted { $0.createdAt < $1.createdAt }.first
+        return profiles
+            .sorted { $0.createdAt > $1.createdAt }
+            .sorted { lhs, rhs in
+                if isConfigured(lhs) == isConfigured(rhs) {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return isConfigured(lhs) && !isConfigured(rhs)
+            }
+            .first
     }
 
     func setActiveProfile(
@@ -39,10 +47,14 @@ struct CompanyProfileSelectionService {
         registrations: [WorkEntry],
         fallbackActiveProfile: CompanyProfile?
     ) -> CompanyProfile? {
-        explicitProfile
-            ?? client?.companyProfile
-            ?? registrations.compactMap(\.companyProfile).first
-            ?? fallbackActiveProfile
+        preferredProfile(
+            candidates: [
+                explicitProfile,
+                client?.companyProfile,
+                registrations.compactMap(\.companyProfile).first,
+                fallbackActiveProfile
+            ]
+        )
     }
 
     func resolveQuoteProfile(
@@ -50,7 +62,7 @@ struct CompanyProfileSelectionService {
         client: Client?,
         fallbackActiveProfile: CompanyProfile?
     ) -> CompanyProfile? {
-        explicitProfile ?? client?.companyProfile ?? fallbackActiveProfile
+        preferredProfile(candidates: [explicitProfile, client?.companyProfile, fallbackActiveProfile])
     }
 
     func resolveWorkEntryProfile(
@@ -58,6 +70,20 @@ struct CompanyProfileSelectionService {
         client: Client?,
         fallbackActiveProfile: CompanyProfile?
     ) -> CompanyProfile? {
-        explicitProfile ?? client?.companyProfile ?? fallbackActiveProfile
+        preferredProfile(candidates: [explicitProfile, client?.companyProfile, fallbackActiveProfile])
+    }
+
+    private func preferredProfile(candidates: [CompanyProfile?]) -> CompanyProfile? {
+        let profiles = candidates.compactMap { $0 }
+        return profiles.first(where: isConfigured(_:)) ?? profiles.first
+    }
+
+    private func isConfigured(_ profile: CompanyProfile) -> Bool {
+        !profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || !profile.ownerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || !profile.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || !profile.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || !profile.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || !profile.iban.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

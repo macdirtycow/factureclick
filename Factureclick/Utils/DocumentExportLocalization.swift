@@ -30,6 +30,21 @@ struct DocumentExportLocalization {
         }
     }
 
+    var creditInvoiceTitle: String {
+        switch language {
+        case .dutch:
+            "Creditfactuur"
+        case .german:
+            "Gutschrift"
+        case .english:
+            "Credit invoice"
+        }
+    }
+
+    func invoiceTitle(for invoice: Invoice) -> String {
+        invoice.isCreditInvoice ? creditInvoiceTitle : invoiceTitle
+    }
+
     var quoteTitle: String {
         switch language {
         case .dutch:
@@ -63,6 +78,17 @@ struct DocumentExportLocalization {
         }
     }
 
+    var invoiceRecipientLabel: String {
+        switch language {
+        case .dutch:
+            "Factuur aan"
+        case .german:
+            "Rechnung an"
+        case .english:
+            "Invoice To"
+        }
+    }
+
     var quoteForLabel: String {
         switch language {
         case .dutch:
@@ -82,6 +108,28 @@ struct DocumentExportLocalization {
             "Seite"
         case .english:
             "Page"
+        }
+    }
+
+    var factureclickCertifiedLabel: String {
+        switch language {
+        case .dutch:
+            "Factureclick Certified"
+        case .german:
+            "Factureclick Certified"
+        case .english:
+            "Factureclick Certified"
+        }
+    }
+
+    var poweredByFactureclickLabel: String {
+        switch language {
+        case .dutch:
+            "Powered by Factureclick"
+        case .german:
+            "Powered by Factureclick"
+        case .english:
+            "Powered by Factureclick"
         }
     }
 
@@ -173,6 +221,35 @@ struct DocumentExportLocalization {
         }
     }
 
+    var kvkLabel: String {
+        switch language {
+        case .dutch:
+            "KvK"
+        case .german:
+            "Handelsreg.-Nr."
+        case .english:
+            "Chamber of Commerce"
+        }
+    }
+
+    var vatRegistrationLabel: String {
+        switch language {
+        case .dutch:
+            "Btw"
+        case .german:
+            "USt-IdNr."
+        case .english:
+            "VAT"
+        }
+    }
+
+    var ibanLabel: String {
+        switch language {
+        case .dutch, .german, .english:
+            "IBAN"
+        }
+    }
+
     var totalsLabel: String {
         switch language {
         case .dutch:
@@ -192,6 +269,65 @@ struct DocumentExportLocalization {
             "Zahlungsdaten"
         case .english:
             "Payment details"
+        }
+    }
+
+    var bankTransferLabel: String {
+        switch language {
+        case .dutch:
+            "Bankoverschrijving (SEPA)"
+        case .german:
+            "Banküberweisung (SEPA)"
+        case .english:
+            "Bank transfer (SEPA)"
+        }
+    }
+
+    var paymentLinkLabel: String {
+        switch language {
+        case .dutch:
+            "Betaallink"
+        case .german:
+            "Zahlungslink"
+        case .english:
+            "Payment link"
+        }
+    }
+
+    var scanToPayLabel: String {
+        switch language {
+        case .dutch:
+            "Scan om te betalen"
+        case .german:
+            "Zum Bezahlen scannen"
+        case .english:
+            "Scan to pay"
+        }
+    }
+
+    var openPaymentLinkLabel: String {
+        switch language {
+        case .dutch:
+            "Open betaallink"
+        case .german:
+            "Zahlungslink öffnen"
+        case .english:
+            "Open payment link"
+        }
+    }
+
+    var paypalLabel: String {
+        "PayPal"
+    }
+
+    var accountHolderLabel: String {
+        switch language {
+        case .dutch:
+            "Rekeninghouder"
+        case .german:
+            "Kontoinhaber"
+        case .english:
+            "Account holder"
         }
     }
 
@@ -397,6 +533,46 @@ struct DocumentExportLocalization {
         }
     }
 
+    func resolvedPaymentInstruction(customText: String?, invoiceNumber: String) -> String {
+        let trimmed = customText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else {
+            return paymentInstruction(invoiceNumber: invoiceNumber)
+        }
+
+        let normalized = trimmed.lowercased()
+        let legacyDefaults = [
+            "please mention the invoice number when making payment.",
+            "please transfer the amount within 14 days and mention the invoice number."
+        ]
+
+        if legacyDefaults.contains(normalized) {
+            return paymentInstruction(invoiceNumber: invoiceNumber)
+        }
+
+        return trimmed
+    }
+
+    func resolvedDefaultMessage(customText: String?, fallback: String) -> String {
+        let trimmed = customText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else {
+            return fallback
+        }
+
+        let normalized = trimmed.lowercased()
+        let legacyDefaults = [
+            "thank you for your business.",
+            "thanks for your business.",
+            "thank you for your trust.",
+            "please contact us if you would like to accept this quote."
+        ]
+
+        if legacyDefaults.contains(normalized) {
+            return fallback
+        }
+
+        return trimmed
+    }
+
     func accountHolder(_ name: String) -> String {
         switch language {
         case .dutch:
@@ -449,6 +625,17 @@ struct DocumentExportLocalization {
             "Bitte kontaktieren Sie uns, wenn Sie dieses Angebot annehmen möchten."
         case .english:
             "Please contact us if you would like to accept this quote."
+        }
+    }
+
+    var invoiceClosingMessage: String {
+        switch language {
+        case .dutch:
+            "Dank u voor uw opdracht."
+        case .german:
+            "Vielen Dank für Ihren Auftrag."
+        case .english:
+            "Thank you for your business."
         }
     }
 

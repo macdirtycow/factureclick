@@ -9,12 +9,22 @@ import SwiftUI
 
 struct LazyContainer<Content: View>: View {
     private let content: () -> Content
+    @State private var hasAppeared = false
 
     init(@ViewBuilder content: @escaping () -> Content) {
         self.content = content
     }
 
     var body: some View {
-        content()
+        Group {
+            if hasAppeared {
+                content()
+            } else {
+                Color.clear
+            }
+        }
+        .onAppear {
+            hasAppeared = true
+        }
     }
 }

@@ -15,6 +15,7 @@ struct MailComposeAttachment {
 }
 
 struct MailComposePayload {
+    let id = UUID()
     let recipients: [String]
     let subject: String
     let body: String

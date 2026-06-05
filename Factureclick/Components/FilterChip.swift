@@ -19,16 +19,7 @@ struct FilterChip: View {
                 .foregroundStyle(isSelected ? Color.white : AppTheme.primaryText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(
-                    Group {
-                        if isSelected {
-                            AppTheme.accentColor
-                        } else {
-                            AppTheme.elevatedBackground
-                        }
-                    },
-                    in: Capsule()
-                )
+                .background(isSelected ? AppTheme.accentColor : AppTheme.elevatedBackground, in: Capsule())
         }
         .buttonStyle(.plain)
     }

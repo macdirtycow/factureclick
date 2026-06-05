@@ -33,20 +33,13 @@ struct InvoicePaymentOptionsService {
             options.append(bankTransferOption)
         }
 
-        if let paypalOption = makeURLPaymentOption(
+        if companyProfile?.isPayPalPaymentEnabled == true,
+           let paypalOption = makeURLPaymentOption(
             title: localization.paypalLabel,
             urlString: companyProfile?.paypalPaymentURL,
             invoiceNumber: invoice.invoiceNumber
         ) {
             options.append(paypalOption)
-        }
-
-        if let weroOption = makeURLPaymentOption(
-            title: localization.weroLabel,
-            urlString: companyProfile?.weroPaymentURL,
-            invoiceNumber: invoice.invoiceNumber
-        ) {
-            options.append(weroOption)
         }
 
         return options
@@ -55,7 +48,7 @@ struct InvoicePaymentOptionsService {
     private func makeBankTransferOption(invoice: Invoice, companyProfile: CompanyProfile?) -> InvoicePaymentOption? {
         guard companyProfile?.showSEPAPaymentQRCode == true else { return nil }
 
-        let iban = companyProfile?.iban.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let iban = normalizedIBAN(companyProfile?.iban)
         guard !iban.isEmpty else { return nil }
 
         let accountHolder = resolvedAccountHolder(companyProfile)
@@ -63,12 +56,14 @@ struct InvoicePaymentOptionsService {
             customText: companyProfile?.defaultPaymentText,
             invoiceNumber: invoice.invoiceNumber
         )
-        let qrString = makeSEPAPayload(
+        guard let qrCodePNGData = makeSEPAPaymentQRCodePNGData(
             name: accountHolder,
             iban: iban,
             amount: max(invoice.totalAmount, 0),
             remittance: paymentInstruction
-        )
+        ) else {
+            return nil
+        }
 
         return InvoicePaymentOption(
             title: localization.bankTransferLabel,
@@ -79,7 +74,7 @@ struct InvoicePaymentOptionsService {
             ],
             actionLabel: nil,
             actionURL: nil,
-            qrCodePNGData: makeQRCodePNGData(from: qrString)
+            qrCodePNGData: qrCodePNGData
         )
     }
 
@@ -120,29 +115,49 @@ struct InvoicePaymentOptionsService {
         return AppBrand.displayName
     }
 
-    private func makeSEPAPayload(name: String, iban: String, amount: Double, remittance: String) -> String {
-        let normalizedName = String(name.prefix(70))
-        let normalizedRemittance = String(remittance.prefix(140))
+    private func makeSEPAPaymentQRCodePNGData(name: String, iban: String, amount: Double, remittance: String) -> Data? {
+        let normalizedName = normalizedSEPAText(name, maxLength: 70)
+        let normalizedRemittance = normalizedSEPAText(remittance, maxLength: 140)
         let amountString = amount > 0 ? String(format: "EUR%.2f", amount) : ""
-
-        return [
+        let payloadLines = [
             "BCD",
             "002",
-            "1",
+            "2",
             "SCT",
             "",
             normalizedName,
             iban,
             amountString,
             "",
-            normalizedRemittance,
-            ""
-        ].joined(separator: "\n")
+            normalizedRemittance
+        ]
+        let payload = payloadLines.joined(separator: "\n")
+        guard let payloadData = payload.data(using: .isoLatin1, allowLossyConversion: true) else {
+            return nil
+        }
+
+        return makeQRCodePNGData(from: payloadData)
     }
 
-    private func makeQRCodePNGData(from value: String) -> Data? {
-        guard let messageData = value.data(using: .utf8) else { return nil }
+    private func normalizedIBAN(_ value: String?) -> String {
+        (value ?? "")
+            .uppercased()
+            .components(separatedBy: .whitespacesAndNewlines)
+            .joined()
+    }
 
+    private func normalizedSEPAText(_ value: String, maxLength: Int) -> String {
+        let collapsedWhitespace = value
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(collapsedWhitespace.prefix(maxLength))
+    }
+
+    private func makeQRCodePNGData(from messageData: Data) -> Data? {
         let filter = CIFilter.qrCodeGenerator()
         filter.setValue(messageData, forKey: "inputMessage")
         filter.setValue("M", forKey: "inputCorrectionLevel")
@@ -154,5 +169,10 @@ struct InvoicePaymentOptionsService {
 
         let image = UIImage(cgImage: cgImage)
         return image.pngData()
+    }
+
+    private func makeQRCodePNGData(from value: String) -> Data? {
+        guard let messageData = value.data(using: .utf8) else { return nil }
+        return makeQRCodePNGData(from: messageData)
     }
 }

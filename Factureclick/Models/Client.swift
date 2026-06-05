@@ -20,6 +20,7 @@ final class Client {
     var vatNumber: String
     var paymentTermDays: Int
     var defaultHourlyRate: Double
+    var notes: String
 
     @Relationship(deleteRule: .deny, inverse: \WorkEntry.client)
     var workEntries: [WorkEntry]
@@ -27,8 +28,22 @@ final class Client {
     @Relationship(deleteRule: .deny, inverse: \Invoice.client)
     var invoices: [Invoice]
 
+    @Relationship(deleteRule: .deny, inverse: \Quote.client)
+    var quotes: [Quote]
+
     @Relationship(deleteRule: .nullify, inverse: \CollaborationRule.client)
     var collaborationRules: [CollaborationRule]
+
+    @Relationship(deleteRule: .deny, inverse: \RecurringInvoiceTemplate.client)
+    var recurringInvoiceTemplates: [RecurringInvoiceTemplate]
+
+    @Relationship(deleteRule: .nullify, inverse: \MileageEntry.client)
+    var mileageEntries: [MileageEntry]
+
+    @Relationship(deleteRule: .nullify, inverse: \Receipt.linkedClient)
+    var receipts: [Receipt]
+
+    var companyProfile: CompanyProfile?
 
     init(
         id: UUID = UUID(),
@@ -41,9 +56,15 @@ final class Client {
         vatNumber: String = "",
         paymentTermDays: Int = 30,
         defaultHourlyRate: Double = 0,
+        notes: String = "",
         workEntries: [WorkEntry] = [],
         invoices: [Invoice] = [],
-        collaborationRules: [CollaborationRule] = []
+        quotes: [Quote] = [],
+        collaborationRules: [CollaborationRule] = [],
+        recurringInvoiceTemplates: [RecurringInvoiceTemplate] = [],
+        mileageEntries: [MileageEntry] = [],
+        receipts: [Receipt] = [],
+        companyProfile: CompanyProfile? = nil
     ) {
         self.id = id
         self.name = name
@@ -55,8 +76,14 @@ final class Client {
         self.vatNumber = vatNumber
         self.paymentTermDays = paymentTermDays
         self.defaultHourlyRate = defaultHourlyRate
+        self.notes = notes
         self.workEntries = workEntries
         self.invoices = invoices
+        self.quotes = quotes
         self.collaborationRules = collaborationRules
+        self.recurringInvoiceTemplates = recurringInvoiceTemplates
+        self.mileageEntries = mileageEntries
+        self.receipts = receipts
+        self.companyProfile = companyProfile
     }
 }

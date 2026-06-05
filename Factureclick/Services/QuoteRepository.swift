@@ -10,9 +10,14 @@ import SwiftData
 
 struct QuoteRepository {
     private let calendar: Calendar
+    private let signatureStorageService: SignatureStorageService
 
-    init(calendar: Calendar = .current) {
+    init(
+        calendar: Calendar = .current,
+        signatureStorageService: SignatureStorageService = SignatureStorageService()
+    ) {
         self.calendar = calendar
+        self.signatureStorageService = signatureStorageService
     }
 
     func nextQuoteNumber(existingQuotes: [Quote], quoteDate: Date, prefix: String = "Q", sequencePadding: Int = 3) -> String {
@@ -36,8 +41,28 @@ struct QuoteRepository {
         return quote.status
     }
 
+    func canConvertToInvoice(_ quote: Quote, referenceDate: Date = .now) -> Bool {
+        normalizedStatus(for: quote, referenceDate: referenceDate) == .accepted && quote.convertedInvoice == nil
+    }
+
     func save(quote: Quote, in context: ModelContext) throws {
         context.insert(quote)
+        try context.save()
+    }
+
+    func delete(_ quote: Quote, in context: ModelContext) throws {
+        if let signature = quote.customerSignature {
+            signatureStorageService.deleteStoredSignature(
+                imageLocalPath: signature.imageLocalPath,
+                strokeLocalPath: signature.strokeLocalPath
+            )
+        }
+
+        if let convertedInvoice = quote.convertedInvoice {
+            convertedInvoice.sourceQuote = nil
+        }
+
+        context.delete(quote)
         try context.save()
     }
 }

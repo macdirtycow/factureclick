@@ -22,11 +22,13 @@ struct WorkModeConfigurationService {
 
         switch mode {
         case .freelancer:
-            baseTabs = [.dashboard, .agenda, .registrations, .clients, .products, .invoices, .settings]
+            baseTabs = [.dashboard, .agenda, .registrations, .invoices, .clients, .products, .settings]
         case .quoteBusiness:
-            baseTabs = [.dashboard, .clients, .products, .invoices, .settings]
+            baseTabs = [.dashboard, .invoices, .clients, .products, .settings]
         case .hybrid:
-            baseTabs = [.dashboard, .agenda, .registrations, .clients, .products, .invoices, .settings]
+            baseTabs = [.dashboard, .agenda, .registrations, .invoices, .clients, .products, .settings]
+        case .custom:
+            baseTabs = [.dashboard, .agenda, .registrations, .invoices, .clients, .products, .settings]
         }
 
         return baseTabs.filter { tab in
@@ -37,12 +39,19 @@ struct WorkModeConfigurationService {
                 isModuleEnabled(.agenda, settings: settings, moduleConfiguration: moduleConfiguration)
             case .registrations:
                 isModuleEnabled(.workRegistrations, settings: settings, moduleConfiguration: moduleConfiguration)
+                    || isModuleEnabled(.timeTracking, settings: settings, moduleConfiguration: moduleConfiguration)
+                    || isModuleEnabled(.mileageTracking, settings: settings, moduleConfiguration: moduleConfiguration)
+                    || isModuleEnabled(.receipts, settings: settings, moduleConfiguration: moduleConfiguration)
             case .clients:
                 true
             case .products:
                 true
             case .invoices:
                 isModuleEnabled(.invoices, settings: settings, moduleConfiguration: moduleConfiguration)
+                    || isModuleEnabled(.quotes, settings: settings, moduleConfiguration: moduleConfiguration)
+                    || isModuleEnabled(.paymentReminders, settings: settings, moduleConfiguration: moduleConfiguration)
+                    || isModuleEnabled(.recurringInvoices, settings: settings, moduleConfiguration: moduleConfiguration)
+                    || isModuleEnabled(.vatOverview, settings: settings, moduleConfiguration: moduleConfiguration)
             }
         }
     }
@@ -66,6 +75,8 @@ struct WorkModeConfigurationService {
     ) {
         settings.workMode = mode
         settings.hasCompletedWorkModeOnboarding = true
+        guard mode != .custom else { return }
+
         let defaults = defaultEnabledModules(for: mode)
         for module in AppModule.allCases {
             moduleConfiguration.setEnabled(defaults[module] ?? true, for: module)
@@ -145,6 +156,8 @@ struct WorkModeConfigurationService {
                 .multipleCompanyProfiles: true
             ]
         case .hybrid:
+            Dictionary(uniqueKeysWithValues: AppModule.allCases.map { ($0, true) })
+        case .custom:
             Dictionary(uniqueKeysWithValues: AppModule.allCases.map { ($0, true) })
         }
     }

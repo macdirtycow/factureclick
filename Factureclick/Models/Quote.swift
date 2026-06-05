@@ -19,13 +19,22 @@ final class Quote {
     var vatAmount: Double
     var totalAmount: Double
     var notes: String
+    var convertedAt: Date?
     var createdAt: Date
     var updatedAt: Date
 
     var client: Client
 
+    @Relationship(deleteRule: .nullify, inverse: \Invoice.sourceQuote)
+    var convertedInvoice: Invoice?
+
     @Relationship(deleteRule: .cascade, inverse: \QuoteLine.quote)
     var lines: [QuoteLine]
+
+    @Relationship(deleteRule: .cascade, inverse: \CustomerSignature.quote)
+    var customerSignature: CustomerSignature?
+
+    var companyProfile: CompanyProfile?
 
     var status: QuoteStatus {
         get { QuoteStatus(rawValue: statusRawValue) ?? .draft }
@@ -43,9 +52,13 @@ final class Quote {
         vatAmount: Double = 0,
         totalAmount: Double = 0,
         notes: String = "",
+        convertedAt: Date? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
-        lines: [QuoteLine] = []
+        convertedInvoice: Invoice? = nil,
+        lines: [QuoteLine] = [],
+        customerSignature: CustomerSignature? = nil,
+        companyProfile: CompanyProfile? = nil
     ) {
         self.id = id
         self.quoteNumber = quoteNumber
@@ -57,8 +70,12 @@ final class Quote {
         self.vatAmount = vatAmount
         self.totalAmount = totalAmount
         self.notes = notes
+        self.convertedAt = convertedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.convertedInvoice = convertedInvoice
         self.lines = lines
+        self.customerSignature = customerSignature
+        self.companyProfile = companyProfile
     }
 }

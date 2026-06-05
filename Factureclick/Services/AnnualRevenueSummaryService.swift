@@ -19,6 +19,7 @@ struct AnnualRevenueMonthSummary: Identifiable {
     let month: Int
     let monthName: String
     let revenue: Double
+    let creditedAmount: Double
     let vatCharged: Double
     let invoiceCount: Int
 
@@ -28,6 +29,7 @@ struct AnnualRevenueMonthSummary: Identifiable {
 struct AnnualRevenueSummarySnapshot {
     let year: Int
     let totalRevenue: Double
+    let totalCreditedAmount: Double
     let totalVATCharged: Double
     let totalPaidInvoices: Double
     let totalUnpaidInvoices: Double
@@ -77,6 +79,7 @@ struct AnnualRevenueSummaryService {
                 month: month,
                 monthName: calendar.monthSymbols[month - 1],
                 revenue: monthInvoices.reduce(0) { $0 + $1.totalAmount },
+                creditedAmount: monthInvoices.filter { $0.isCreditInvoice }.reduce(0) { $0 + abs($1.totalAmount) },
                 vatCharged: monthInvoices.reduce(0) { $0 + $1.vatAmount },
                 invoiceCount: monthInvoices.count
             )
@@ -109,6 +112,7 @@ struct AnnualRevenueSummaryService {
         return AnnualRevenueSummarySnapshot(
             year: year,
             totalRevenue: filteredInvoices.reduce(0) { $0 + $1.totalAmount },
+            totalCreditedAmount: filteredInvoices.filter { $0.isCreditInvoice }.reduce(0) { $0 + abs($1.totalAmount) },
             totalVATCharged: filteredInvoices.reduce(0) { $0 + $1.vatAmount },
             totalPaidInvoices: paidInvoices.reduce(0) { $0 + $1.totalAmount },
             totalUnpaidInvoices: unpaidInvoices.reduce(0) { $0 + $1.totalAmount },

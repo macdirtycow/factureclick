@@ -63,23 +63,23 @@ struct WeeklyInvoiceWorkflowView: View {
                 .padding(.vertical, 24)
             }
             .background(AppTheme.screenBackground.ignoresSafeArea())
-            .navigationTitle("Invoice by period")
+            .navigationTitle(localization.phrase("Invoice by period"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
+                    Button(localization.phrase("Close")) { dismiss() }
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
                     if let review, !review.items.isEmpty {
-                        Button("Confirm") {
+                        Button(localization.phrase("Confirm")) {
                             confirm(review)
                         }
                     }
                 }
             }
-            .alert("Invoice Workflow", isPresented: errorBinding) {
-                Button("OK", role: .cancel) { }
+            .alert(localization.phrase("Invoice Workflow"), isPresented: errorBinding) {
+                Button(localization.phrase("OK"), role: .cancel) { }
             } message: {
                 Text(errorMessage ?? "")
             }
@@ -89,42 +89,42 @@ struct WeeklyInvoiceWorkflowView: View {
     private var configCard: some View {
         SectionCard {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Generate invoices by period")
+                Text(localization.phrase("Generate invoices by period"))
                     .font(AppTheme.titleFont)
                     .foregroundStyle(AppTheme.primaryText)
 
-                Picker("Mode", selection: $selectedMode) {
+                Picker(localization.phrase("Mode"), selection: $selectedMode) {
                     ForEach(InvoiceGenerationPeriodMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                        Text(localization.phrase(mode.title)).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
 
                 switch selectedMode {
                 case .weekly:
-                    DatePicker("Week", selection: $selectedReferenceDate, displayedComponents: .date)
+                    DatePicker(localization.phrase("Week"), selection: $selectedReferenceDate, displayedComponents: .date)
                 case .monthly:
-                    DatePicker("Month", selection: $selectedReferenceDate, displayedComponents: .date)
+                    DatePicker(localization.phrase("Month"), selection: $selectedReferenceDate, displayedComponents: .date)
                 case .custom:
-                    DatePicker("From", selection: $customStartDate, displayedComponents: .date)
-                    DatePicker("To", selection: $customEndDate, displayedComponents: .date)
+                    DatePicker(localization.phrase("From"), selection: $customStartDate, displayedComponents: .date)
+                    DatePicker(localization.phrase("To"), selection: $customEndDate, displayedComponents: .date)
                 }
 
-                Picker("Client", selection: $selectedClientID) {
-                    Text("All clients").tag(nil as UUID?)
+                Picker(localization.phrase("Client"), selection: $selectedClientID) {
+                    Text(localization.phrase("All clients")).tag(nil as UUID?)
                     ForEach(clients) { client in
                         Text(client.name).tag(Optional(client.id))
                     }
                 }
 
-                Picker("Group lines", selection: $groupingMode) {
+                Picker(localization.phrase("Group lines"), selection: $groupingMode) {
                     ForEach(InvoiceGroupingMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                        Text(localization.phrase(mode.title)).tag(mode)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
 
-                Button("Prepare review") {
+                Button(localization.phrase("Prepare review")) {
                     review = useCase.prepareReview(
                         mode: selectedMode,
                         referenceDate: selectedReferenceDate,
@@ -150,7 +150,7 @@ struct WeeklyInvoiceWorkflowView: View {
     private func reviewCard(review: PeriodInvoiceReview) -> some View {
         SectionCard {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Review before confirming")
+                Text(localization.phrase("Review before confirming"))
                     .font(AppTheme.sectionTitleFont)
                     .foregroundStyle(AppTheme.primaryText)
 
@@ -159,7 +159,7 @@ struct WeeklyInvoiceWorkflowView: View {
                     .foregroundStyle(AppTheme.secondaryText)
 
                 if review.items.isEmpty {
-                    Text("No uninvoiced registrations found for that period.")
+                    Text(localization.phrase("No uninvoiced registrations found for that period."))
                         .font(AppTheme.bodyFont)
                         .foregroundStyle(AppTheme.secondaryText)
                 } else {
@@ -171,7 +171,7 @@ struct WeeklyInvoiceWorkflowView: View {
                                         .font(AppTheme.bodyFont.weight(.semibold))
                                         .foregroundStyle(AppTheme.primaryText)
 
-                                    Text("\(item.registrationCount) registrations")
+                                    Text("\(item.registrationCount) \(localization.phrase("registrations"))")
                                         .font(AppTheme.captionFont)
                                         .foregroundStyle(AppTheme.secondaryText)
                                 }
@@ -230,5 +230,9 @@ struct WeeklyInvoiceWorkflowView: View {
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )
+    }
+
+    private var localization: AppLocalization {
+        AppLocalization(localeIdentifier: appSettings.first?.preferredLocaleIdentifier)
     }
 }

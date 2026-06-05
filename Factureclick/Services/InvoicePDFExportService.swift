@@ -13,12 +13,14 @@ struct InvoicePDFExportService {
     private let collaborationRevenueService = CollaborationRevenueService()
     private let exportFileStorageService = ExportFileStorageService()
     private let localization: DocumentExportLocalization
+    private let paymentOptionsService: InvoicePaymentOptionsService
     private let templateStyle: DocumentTemplateStyle
 
     init(localeIdentifier: String? = nil, templateStyle: DocumentTemplateStyle = .premium) {
         localization = DocumentExportLocalization(
             localeCode: localeIdentifier ?? Locale.preferredLanguages.first ?? Locale.current.identifier
         )
+        paymentOptionsService = InvoicePaymentOptionsService(localization: localization)
         self.templateStyle = templateStyle
     }
 
@@ -67,6 +69,7 @@ struct InvoicePDFExportService {
             customText: companyProfile?.defaultPaymentText,
             invoiceNumber: invoice.invoiceNumber
         )
+        let paymentOptions = paymentOptionsService.makePaymentOptions(invoice: invoice, companyProfile: companyProfile)
         let messageLines = [
             invoice.notes.trimmingCharacters(in: .whitespacesAndNewlines),
             localization.resolvedDefaultMessage(
@@ -414,20 +417,97 @@ struct InvoicePDFExportService {
             drawDivider(at: currentY)
             currentY += 18
 
+            func drawCardSection(title: String, bodyText: String, font: UIFont) {
+                let sectionHeight = max(templateStyle == .compact ? 72 : 76, measuredTextHeight(bodyText, width: contentWidth - 28, font: font) + 26)
+                beginPageIfNeeded(height: 28 + sectionHeight + 8)
+                drawSectionHeader(title, y: currentY)
+                currentY += 28
+                let sectionRect = CGRect(x: margin, y: currentY - 4, width: contentWidth, height: sectionHeight)
+                drawPanel(sectionRect, fill: .white, stroke: border, radius: 14)
+                drawText(bodyText, frame: CGRect(x: margin + 14, y: currentY + 8, width: contentWidth - 28, height: sectionRect.height - 18), font: font, color: ink)
+                currentY += sectionHeight + 14
+            }
+
+            func drawPaymentOptionSection(_ option: InvoicePaymentOption, font: UIFont) {
+                let qrImage = option.qrCodePNGData.flatMap(UIImage.init(data:))
+                let qrSize: CGFloat = qrImage == nil ? 0 : (templateStyle == .compact ? 76 : 88)
+                let horizontalPadding: CGFloat = 14
+                let verticalPadding: CGFloat = templateStyle == .compact ? 12 : 14
+                let qrSpacing: CGFloat = qrImage == nil ? 0 : 16
+                let detailWidth = contentWidth - (horizontalPadding * 2) - qrSize - qrSpacing
+                let titleFont = UIFont.systemFont(ofSize: templateStyle == .compact ? 12 : 14, weight: .semibold)
+                let detailText = option.detailLines.joined(separator: "\n")
+                let detailHeight = measuredTextHeight(detailText, width: detailWidth, font: font)
+                let buttonHeight: CGFloat = option.actionURL == nil ? 0 : (templateStyle == .compact ? 26 : 30)
+                let buttonSpacing: CGFloat = option.actionURL == nil ? 0 : 10
+                let contentHeight = 22 + detailHeight + buttonSpacing + buttonHeight
+                let qrLabelHeight: CGFloat = qrImage == nil ? 0 : 18
+                let qrBlockHeight = qrSize + qrLabelHeight + (qrImage == nil ? 0 : 6)
+                let sectionHeight = max(contentHeight, qrBlockHeight) + (verticalPadding * 2)
+
+                beginPageIfNeeded(height: sectionHeight + 8)
+                let sectionRect = CGRect(x: margin, y: currentY - 4, width: contentWidth, height: sectionHeight)
+                drawPanel(sectionRect, fill: .white, stroke: border, radius: 14)
+
+                let contentX = sectionRect.minX + horizontalPadding
+                let contentY = sectionRect.minY + verticalPadding
+                drawText(
+                    option.title,
+                    frame: CGRect(x: contentX, y: contentY, width: detailWidth, height: 18),
+                    font: titleFont,
+                    color: accent
+                )
+                drawText(
+                    detailText,
+                    frame: CGRect(x: contentX, y: contentY + 22, width: detailWidth, height: detailHeight + 4),
+                    font: font,
+                    color: ink
+                )
+
+                if let actionURL = option.actionURL {
+                    let buttonRect = CGRect(
+                        x: contentX,
+                        y: contentY + 22 + detailHeight + buttonSpacing,
+                        width: min(detailWidth, templateStyle == .compact ? 138 : 156),
+                        height: buttonHeight
+                    )
+                    drawPanel(buttonRect, fill: accent, radius: 12)
+                    drawText(
+                        option.actionLabel ?? localization.openPaymentLinkLabel,
+                        frame: buttonRect.insetBy(dx: 10, dy: 6),
+                        font: .systemFont(ofSize: templateStyle == .compact ? 10 : 11, weight: .semibold),
+                        color: .white,
+                        alignment: .center
+                    )
+                    context.setURL(actionURL, for: buttonRect.applying(context.cgContext.userSpaceToDeviceSpaceTransform))
+                }
+
+                if let qrImage {
+                    let qrX = sectionRect.maxX - horizontalPadding - qrSize
+                    let qrRect = CGRect(x: qrX, y: contentY, width: qrSize, height: qrSize)
+                    qrImage.draw(in: qrRect)
+                    drawText(
+                        localization.scanToPayLabel,
+                        frame: CGRect(x: qrX - 8, y: qrRect.maxY + 6, width: qrSize + 16, height: qrLabelHeight),
+                        font: .systemFont(ofSize: 9, weight: .semibold),
+                        color: softText,
+                        alignment: .center
+                    )
+                }
+
+                currentY += sectionHeight + 12
+            }
+
             let paymentText = [
                 "\(localization.ibanLabel): \(resolvedIBAN(companyProfile))",
                 "\(localization.accountHolderLabel): \(resolvedAccountHolder(companyProfile))",
                 "\(localization.messageLabel): \(paymentInstruction)"
             ].joined(separator: "\n")
             let paymentFont = UIFont.systemFont(ofSize: templateStyle == .compact ? 11 : 13)
-            let paymentHeight = max(templateStyle == .compact ? 72 : 76, measuredTextHeight(paymentText, width: contentWidth - 28, font: paymentFont) + 26)
-            drawSectionHeader(localization.paymentDetailsLabel, y: currentY)
-            currentY += 28
-            beginPageIfNeeded(height: paymentHeight + 8)
-            let paymentRect = CGRect(x: margin, y: currentY - 4, width: contentWidth, height: paymentHeight)
-            drawPanel(paymentRect, fill: .white, stroke: border, radius: 14)
-            drawText(paymentText, frame: CGRect(x: margin + 14, y: currentY + 8, width: contentWidth - 28, height: paymentRect.height - 18), font: paymentFont, color: ink)
-            currentY += paymentHeight + 14
+            drawCardSection(title: localization.paymentDetailsLabel, bodyText: paymentText, font: paymentFont)
+            for option in paymentOptions {
+                drawPaymentOptionSection(option, font: paymentFont)
+            }
 
             if let partnerName = collaboration.partnerName {
                 let collaborationText = [
@@ -435,34 +515,15 @@ struct InvoicePDFExportService {
                     "\(localization.partnerShare(name: partnerName, percentage: collaboration.percentage.formatted(.number.precision(.fractionLength(0...2))))): \(currency(collaboration.partnerShare))",
                     "\(localization.netIncomeLabel): \(currency(collaboration.userNetAmount))"
                 ].joined(separator: "\n")
-                let collaborationHeight = max(templateStyle == .compact ? 72 : 76, measuredTextHeight(collaborationText, width: contentWidth - 28, font: paymentFont) + 26)
-                drawSectionHeader(localization.collaborationLabel, y: currentY)
-                currentY += 28
-                beginPageIfNeeded(height: collaborationHeight + 8)
-                let collaborationRect = CGRect(x: margin, y: currentY - 4, width: contentWidth, height: collaborationHeight)
-                drawPanel(collaborationRect, fill: .white, stroke: border, radius: 14)
-                drawText(collaborationText, frame: CGRect(x: margin + 14, y: currentY + 8, width: contentWidth - 28, height: collaborationRect.height - 18), font: paymentFont, color: ink)
-                currentY += collaborationHeight + 14
+                drawCardSection(title: localization.collaborationLabel, bodyText: collaborationText, font: paymentFont)
             }
 
             let termsText = [
-                "\(localization.statusLabel): \(invoice.status.displayName)",
                 "\(localization.dueDateLabel): \(invoice.dueDate.formatted(date: .abbreviated, time: .omitted))",
                 messageLines.isEmpty ? nil : messageLines.joined(separator: "\n\n")
             ].compactMap { $0 }.joined(separator: "\n\n")
             let termsFont = UIFont.systemFont(ofSize: templateStyle == .compact ? 11 : 13)
-            let termsHeight = max(templateStyle == .compact ? 72 : 76, measuredTextHeight(termsText, width: contentWidth - 28, font: termsFont) + 26)
-            drawSectionHeader(localization.termsLabel, y: currentY)
-            currentY += 28
-            beginPageIfNeeded(height: termsHeight + 8)
-            let termsRect = CGRect(x: margin, y: currentY - 4, width: contentWidth, height: termsHeight)
-            drawPanel(termsRect, fill: .white, stroke: border, radius: 14)
-            drawText(
-                termsText,
-                frame: CGRect(x: margin + 14, y: currentY + 8, width: contentWidth - 28, height: termsRect.height - 18),
-                font: termsFont,
-                color: ink
-            )
+            drawCardSection(title: localization.termsLabel, bodyText: termsText, font: termsFont)
         }
 
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)

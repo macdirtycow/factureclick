@@ -17,13 +17,16 @@ struct ReceiptFormView: View {
     @Query(sort: \Client.name) private var clients: [Client]
     @Query(sort: \WorkEntry.date, order: .reverse) private var workEntries: [WorkEntry]
     @Query(sort: \Invoice.date, order: .reverse) private var invoices: [Invoice]
+    @Query private var appSettings: [AppSettings]
 
     private let receipt: Receipt?
     private let storageService = ReceiptStorageService()
+    private let invoiceRepository = InvoiceRepository()
 
     @State private var viewModel: ReceiptFormViewModel
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPresentingCamera = false
+    @State private var isRecognizingReceipt = false
     @State private var saveErrorMessage: String?
 
     init(receipt: Receipt? = nil) {
@@ -33,71 +36,73 @@ struct ReceiptFormView: View {
 
     var body: some View {
         Form {
-            Section("Receipt image") {
+            Section(localization.phrase("Receipt image")) {
                 receiptImagePreview
+                receiptOCRStatusView
 
                 PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    Label(viewModel.receiptFile == nil ? "Choose from Photos" : "Replace from Photos", systemImage: "photo.on.rectangle")
+                    Label(viewModel.receiptFile == nil ? localization.phrase("Choose from Photos") : localization.phrase("Replace from Photos"), systemImage: "photo.on.rectangle")
                 }
 
                 Button {
                     isPresentingCamera = true
                 } label: {
-                    Label(viewModel.receiptFile == nil ? "Capture Photo" : "Retake Photo", systemImage: "camera")
+                    Label(viewModel.receiptFile == nil ? localization.phrase("Capture Photo") : localization.phrase("Retake Photo"), systemImage: "camera")
                 }
                 .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
             }
 
-            Section("Details") {
-                DatePicker("Date", selection: dateBinding, displayedComponents: .date)
-                TextField("Supplier name", text: supplierBinding)
-                TextField("Amount", value: amountBinding, format: .number.precision(.fractionLength(0...2)))
+            Section(localization.phrase("Details")) {
+                DatePicker(localization.phrase("Date"), selection: dateBinding, displayedComponents: .date)
+                TextField(localization.phrase("Supplier name"), text: supplierBinding)
+                TextField(localization.phrase("Amount"), value: amountBinding, format: .number.precision(.fractionLength(0...2)))
                     .keyboardType(.decimalPad)
-                TextField("VAT amount", value: vatAmountBinding, format: .number.precision(.fractionLength(0...2)))
+                TextField(localization.phrase("VAT amount"), text: vatAmountTextBinding)
                     .keyboardType(.decimalPad)
 
-                Picker("Category", selection: categoryBinding) {
+                Picker(localization.phrase("Category"), selection: categoryBinding) {
                     ForEach(ReceiptCategory.allCases) { category in
-                        Text(category.title).tag(category)
+                        Text(localization.phrase(category.title)).tag(category)
                     }
                 }
             }
 
-            Section("Links") {
-                Picker("Client", selection: clientBinding) {
-                    Text("No linked client").tag(nil as UUID?)
+            Section(localization.phrase("Links")) {
+                Picker(localization.phrase("Client"), selection: clientBinding) {
+                    Text(localization.phrase("No linked client")).tag(nil as UUID?)
                     ForEach(clients) { client in
                         Text(client.name).tag(Optional(client.id))
                     }
                 }
 
-                Picker("Registration", selection: workEntryBinding) {
-                    Text("No linked registration").tag(nil as UUID?)
+                Picker(localization.phrase("Registration"), selection: workEntryBinding) {
+                    Text(localization.phrase("No linked registration")).tag(nil as UUID?)
                     ForEach(availableWorkEntries) { workEntry in
                         Text(registrationLabel(for: workEntry)).tag(Optional(workEntry.id))
                     }
                 }
 
-                Picker("Invoice", selection: invoiceBinding) {
-                    Text("No linked invoice").tag(nil as UUID?)
+                Picker(localization.phrase("Invoice"), selection: invoiceBinding) {
+                    Text(localization.phrase("No linked invoice")).tag(nil as UUID?)
                     ForEach(availableInvoices) { invoice in
-                        Text("\(invoice.invoiceNumber) · \(invoice.client.name)").tag(Optional(invoice.id))
+                        let status = localization.phrase(invoiceRepository.normalizedStatus(for: invoice).displayName)
+                        Text("\(invoice.invoiceNumber) · \(invoice.client.name) · \(status)").tag(Optional(invoice.id))
                     }
                 }
 
-                Text("Link either a registration or an invoice. Selecting one clears the other.")
+                Text(localization.phrase("Link either a registration or an invoice. Selecting one clears the other."))
                     .font(AppTheme.captionFont)
                     .foregroundStyle(AppTheme.secondaryText)
             }
 
-            Section("Notes") {
-                TextField("Add expense context", text: notesBinding, axis: .vertical)
+            Section(localization.phrase("Notes")) {
+                TextField(localization.phrase("Add expense context"), text: notesBinding, axis: .vertical)
                     .lineLimit(4, reservesSpace: true)
             }
         }
         .scrollContentBackground(.hidden)
         .background(AppTheme.screenBackground.ignoresSafeArea())
-        .navigationTitle(receipt == nil ? "New Receipt" : "Edit Receipt")
+        .navigationTitle(receipt == nil ? localization.phrase("New Receipt") : localization.phrase("Edit Receipt"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isPresentingCamera) {
             ReceiptCameraPicker(
@@ -114,8 +119,8 @@ struct ReceiptFormView: View {
         .task(id: selectedPhotoItem) {
             await handleSelectedPhotoItem()
         }
-        .alert("Receipt", isPresented: saveErrorBinding) {
-            Button("OK", role: .cancel) { }
+        .alert(localization.phrase("Receipt"), isPresented: saveErrorBinding) {
+            Button(localization.phrase("OK"), role: .cancel) { }
         } message: {
             Text(saveErrorMessage ?? "")
         }
@@ -127,15 +132,30 @@ struct ReceiptFormView: View {
             guard let selectedID, let invoice = invoices.first(where: { $0.id == selectedID }) else { return }
             viewModel.selectedClientID = invoice.client.id
         }
+        .onChange(of: viewModel.selectedClientID) { _, selectedID in
+            if let selectedWorkEntryID = viewModel.selectedWorkEntryID,
+               let workEntry = workEntries.first(where: { $0.id == selectedWorkEntryID }),
+               let selectedID,
+               workEntry.client.id != selectedID {
+                viewModel.selectLinkedWorkEntry(nil)
+            }
+
+            if let selectedInvoiceID = viewModel.selectedInvoiceID,
+               let invoice = invoices.first(where: { $0.id == selectedInvoiceID }),
+               let selectedID,
+               invoice.client.id != selectedID {
+                viewModel.selectLinkedInvoice(nil)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") {
+                Button(localization.phrase("Cancel")) {
                     dismiss()
                 }
             }
 
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Save") {
+                Button(localization.phrase("Save")) {
                     save()
                 }
                 .disabled(!viewModel.canSave)
@@ -161,7 +181,7 @@ struct ReceiptFormView: View {
                             Image(systemName: "doc.text.viewfinder")
                                 .font(.system(size: 32, weight: .semibold))
                                 .foregroundStyle(AppTheme.accentColor)
-                            Text("Add a receipt image to store proof safely on-device.")
+                            Text(localization.phrase("Add a receipt image to store proof safely on-device."))
                                 .font(AppTheme.bodyFont)
                                 .foregroundStyle(AppTheme.secondaryText)
                                 .multilineTextAlignment(.center)
@@ -177,6 +197,22 @@ struct ReceiptFormView: View {
         return UIImage(contentsOfFile: localPath)
     }
 
+    @ViewBuilder
+    private var receiptOCRStatusView: some View {
+        if isRecognizingReceipt {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text(localization.phrase("Reading receipt details"))
+                    .font(AppTheme.captionFont)
+                    .foregroundStyle(AppTheme.secondaryText)
+            }
+        } else if viewModel.ocrStatus == .completed {
+            Label(localization.phrase("Receipt details recognized"), systemImage: "text.viewfinder")
+                .font(AppTheme.captionFont)
+                .foregroundStyle(AppTheme.accentColor)
+        }
+    }
+
     private var availableWorkEntries: [WorkEntry] {
         workEntries.filter { workEntry in
             guard let selectedClientID = viewModel.selectedClientID else { return true }
@@ -185,10 +221,40 @@ struct ReceiptFormView: View {
     }
 
     private var availableInvoices: [Invoice] {
-        invoices.filter { invoice in
-            guard let selectedClientID = viewModel.selectedClientID else { return true }
-            return invoice.client.id == selectedClientID
-        }
+        let currentlyLinkedInvoiceID = receipt?.linkedInvoice?.id ?? viewModel.selectedInvoiceID
+
+        return invoices
+            .filter { invoice in
+                if invoice.isCreditInvoice {
+                    return false
+                }
+
+                let normalizedStatus = invoiceRepository.normalizedStatus(for: invoice)
+                if normalizedStatus == .paid, invoice.id != currentlyLinkedInvoiceID {
+                    return false
+                }
+
+                guard let selectedClientID = viewModel.selectedClientID else { return true }
+                return invoice.client.id == selectedClientID
+            }
+            .sorted { lhs, rhs in
+                let lhsStatus = invoiceRepository.normalizedStatus(for: lhs)
+                let rhsStatus = invoiceRepository.normalizedStatus(for: rhs)
+
+                if lhsStatus == .draft, rhsStatus != .draft {
+                    return true
+                }
+
+                if rhsStatus == .draft, lhsStatus != .draft {
+                    return false
+                }
+
+                if lhs.date != rhs.date {
+                    return lhs.date > rhs.date
+                }
+
+                return lhs.createdAt > rhs.createdAt
+            }
     }
 
     private var dateBinding: Binding<Date> { Binding(get: { viewModel.date }, set: { viewModel.date = $0 }) }
@@ -205,10 +271,26 @@ struct ReceiptFormView: View {
             set: { if !$0 { saveErrorMessage = nil } }
         )
     }
-    private var vatAmountBinding: Binding<Double?> {
+
+    private var localization: AppLocalization {
+        AppLocalization(localeIdentifier: appSettings.first?.preferredLocaleIdentifier)
+    }
+    private var vatAmountTextBinding: Binding<String> {
         Binding(
-            get: { viewModel.vatAmount },
-            set: { viewModel.vatAmount = $0 }
+            get: {
+                guard let vatAmount = viewModel.vatAmount else { return "" }
+                return AppFormatters.decimalFormatter(maximumFractionDigits: 2).string(from: NSNumber(value: vatAmount)) ?? ""
+            },
+            set: { newValue in
+                let trimmedValue = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedValue.isEmpty else {
+                    viewModel.vatAmount = nil
+                    return
+                }
+
+                let normalizedValue = trimmedValue.replacingOccurrences(of: ",", with: ".")
+                viewModel.vatAmount = Double(normalizedValue)
+            }
         )
     }
 
@@ -244,6 +326,30 @@ struct ReceiptFormView: View {
         }
 
         viewModel.updateStoredFile(payload, importSource: importSource)
+        recognizeReceiptDetails(from: payload)
+    }
+
+    private func recognizeReceiptDetails(from payload: StoredReceiptPayload) {
+        isRecognizingReceipt = true
+        let imageURL = URL(fileURLWithPath: payload.localPath)
+
+        Task {
+            do {
+                let recognizedReceipt = try await Task.detached(priority: .userInitiated) {
+                    try await ReceiptOCRService().recognizeReceipt(at: imageURL)
+                }.value
+
+                await MainActor.run {
+                    viewModel.applyRecognizedReceipt(recognizedReceipt)
+                    isRecognizingReceipt = false
+                }
+            } catch {
+                await MainActor.run {
+                    viewModel.markOCRFailed()
+                    isRecognizingReceipt = false
+                }
+            }
+        }
     }
 
     private func registrationLabel(for workEntry: WorkEntry) -> String {

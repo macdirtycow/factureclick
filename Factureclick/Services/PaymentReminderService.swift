@@ -53,7 +53,7 @@ struct PaymentReminderService {
     }
 
     func canCreateReminder(for invoice: Invoice) -> Bool {
-        !invoice.isCreditInvoice && invoice.status != .paid
+        !invoice.isCreditInvoice && invoice.status != .paid && invoice.status != .draft
     }
 
     func suggestedLevel(for invoice: Invoice) -> InvoiceReminderLevel {
@@ -168,17 +168,22 @@ struct PaymentReminderService {
                 continue
             }
 
+            let draft = makeDraft(for: invoice, level: automaticLevel, localeIdentifier: localeIdentifier)
             let reminder = createReminder(
-                from: makeDraft(for: invoice, level: automaticLevel, localeIdentifier: localeIdentifier),
+                from: draft,
                 for: invoice,
                 createdAt: referenceDate,
                 sentAt: nil
             )
-            modelContext.insert(reminder)
-            createdCount += 1
+            if draft.existingReminderID == nil {
+                modelContext.insert(reminder)
+                createdCount += 1
+            }
         }
 
         if createdCount > 0 {
+            try modelContext.save()
+        } else if modelContext.hasChanges {
             try modelContext.save()
         }
 

@@ -12,12 +12,14 @@ struct InvoiceDOCXExportService {
     private let collaborationRevenueService = CollaborationRevenueService()
     private let exportFileStorageService = ExportFileStorageService()
     private let localization: DocumentExportLocalization
+    private let paymentOptionsService: InvoicePaymentOptionsService
     private let templateStyle: DocumentTemplateStyle
 
     init(localeIdentifier: String? = nil, templateStyle: DocumentTemplateStyle = .premium) {
         localization = DocumentExportLocalization(
             localeCode: localeIdentifier ?? Locale.preferredLanguages.first ?? Locale.current.identifier
         )
+        paymentOptionsService = InvoicePaymentOptionsService(localization: localization)
         self.templateStyle = templateStyle
     }
 
@@ -40,21 +42,31 @@ struct InvoiceDOCXExportService {
         let collaboration = collaborationRevenueService.makeBreakdown(grossAmount: totals.netSubtotal, rule: collaborationRule)
         let vatBreakdown = makeVATBreakdown(from: invoice.lines)
         let logo = logoAsset(from: companyProfile?.logoData)
+        let paymentOptions = paymentOptionsService.makePaymentOptions(invoice: invoice, companyProfile: companyProfile)
+        let documentAssets = makeDocumentAssets(logo: logo, paymentOptions: paymentOptions)
         var files = [
             DOCXFile(path: "[Content_Types].xml", data: Data(contentTypesXML.utf8)),
             DOCXFile(path: "_rels/.rels", data: Data(rootRelationshipsXML.utf8)),
             DOCXFile(path: "docProps/app.xml", data: Data(appPropertiesXML.utf8)),
             DOCXFile(path: "docProps/core.xml", data: Data(corePropertiesXML(title: "\(localization.invoiceTitle(for: invoice)) \(invoice.invoiceNumber)").utf8)),
-            DOCXFile(path: "word/_rels/document.xml.rels", data: Data(documentRelationshipsXML(logoFileExtension: logo?.fileExtension).utf8)),
+            DOCXFile(path: "word/_rels/document.xml.rels", data: Data(documentAssets.relationshipsXML.utf8)),
             DOCXFile(path: "word/footer1.xml", data: Data(footerXML(accentHex: normalizedHexColor(templateStyle.accentHex(defaultAccent: companyProfile?.accentColor)) ?? "2563EB").utf8)),
             DOCXFile(
                 path: "word/document.xml",
-                data: Data(documentXML(invoice: invoice, companyProfile: companyProfile, totals: totals, collaboration: collaboration, vatBreakdown: vatBreakdown, includesLogo: logo != nil).utf8)
+                data: Data(
+                    documentXML(
+                        invoice: invoice,
+                        companyProfile: companyProfile,
+                        totals: totals,
+                        collaboration: collaboration,
+                        vatBreakdown: vatBreakdown,
+                        paymentAssets: documentAssets.paymentAssets,
+                        logoRelationshipID: documentAssets.logoRelationshipID
+                    ).utf8
+                )
             )
         ]
-        if let logo {
-            files.append(DOCXFile(path: "word/media/company-logo.\(logo.fileExtension)", data: logo.data))
-        }
+        files.append(contentsOf: documentAssets.files)
 
         let url = try makeExportURL(invoice: invoice)
         try SimpleZipWriter.write(files: files, to: url)
@@ -173,7 +185,8 @@ struct InvoiceDOCXExportService {
         totals: InvoiceDraftTotals,
         collaboration: CollaborationRevenueBreakdown,
         vatBreakdown: [(rate: Double, amount: Double)],
-        includesLogo: Bool
+        paymentAssets: [DOCXPaymentAsset],
+        logoRelationshipID: String?
     ) -> String {
         let companyLines = resolvedCompanyLines(companyProfile)
         let clientLines = resolvedClientLines(invoice.client)
@@ -194,8 +207,8 @@ struct InvoiceDOCXExportService {
         let brandName = companyProfile?.name.isEmpty == false ? companyProfile!.name : AppBrand.displayName
 
         var sections = [
-            invoiceHeader(title: localization.invoiceTitle(for: invoice).uppercased(), brandName: brandName, invoiceNumber: invoice.invoiceNumber, accentHex: accentHex, inkHex: inkHex, softAccentHex: softAccentHex, includesLogo: includesLogo),
-            layout.showsBadge ? tabulantisBadge(accentHex: accentHex, softAccentHex: softAccentHex) : paragraph("", size: 6),
+            invoiceHeader(title: localization.invoiceTitle(for: invoice).uppercased(), brandName: brandName, invoiceNumber: invoice.invoiceNumber, accentHex: accentHex, inkHex: inkHex, softAccentHex: softAccentHex, logoRelationshipID: logoRelationshipID),
+            layout.showsBadge ? brandBadge(accentHex: accentHex, softAccentHex: softAccentHex) : paragraph("", size: 6),
             twoColumnDetailsTable(leftTitle: localization.fromLabel, leftLines: companyLines, rightTitle: localization.invoiceRecipientLabel, rightLines: clientLines, accentHex: accentHex, panelHex: layout.panelHex, borderHex: "E5E7EB", inkHex: inkHex),
             paragraph("", size: layout.spacingParagraphSize),
             heading(localization.invoiceDetailsLabel, size: layout.headingSize, colorHex: layout.headingColorHex(accentHex: accentHex, inkHex: inkHex)),
@@ -203,8 +216,7 @@ struct InvoiceDOCXExportService {
                 rows: [
                     [localization.invoiceNumberLabel, invoice.invoiceNumber],
                     [localization.invoiceDateLabel, invoice.date.formatted(date: .abbreviated, time: .omitted)],
-                    [localization.dueDateLabel, invoice.dueDate.formatted(date: .abbreviated, time: .omitted)],
-                    [localization.statusLabel, invoice.status.displayName]
+                    [localization.dueDateLabel, invoice.dueDate.formatted(date: .abbreviated, time: .omitted)]
                 ],
                 accentHex: accentHex
             ),
@@ -260,6 +272,11 @@ struct InvoiceDOCXExportService {
                 accentHex: accentHex
             )
         ]
+
+        for asset in paymentAssets {
+            sections.append(paragraph("", size: layout.spacingParagraphSize))
+            sections.append(paymentOptionSection(asset, accentHex: accentHex))
+        }
 
         if let partnerName = collaboration.partnerName {
             sections.append(paragraph("", size: layout.spacingParagraphSize))
@@ -322,10 +339,57 @@ struct InvoiceDOCXExportService {
         """
     }
 
-    private func invoiceHeader(title: String, brandName: String, invoiceNumber: String, accentHex: String, inkHex: String, softAccentHex: String, includesLogo: Bool) -> String {
+    private func paymentOptionSection(_ asset: DOCXPaymentAsset, accentHex: String) -> String {
+        var sectionParts = [
+            heading(asset.option.title, size: 20, colorHex: accentHex)
+        ]
+
+        sectionParts.append(contentsOf: asset.option.detailLines.map { paragraph($0, size: 18) })
+
+        if let relationshipID = asset.hyperlinkRelationshipID {
+            sectionParts.append(hyperlinkParagraph(text: asset.option.actionLabel ?? localization.openPaymentLinkLabel, relationshipID: relationshipID, colorHex: accentHex))
+        }
+
+        if let qrRelationshipID = asset.qrRelationshipID {
+            sectionParts.append(centeredImageParagraph(relationshipID: qrRelationshipID, imageName: "\(asset.option.title) QR", extent: 1_100_000))
+            sectionParts.append(paragraph(localization.scanToPayLabel, bold: true, size: 16, colorHex: accentHex))
+        }
+
+        return sectionParts.joined()
+    }
+
+    private func hyperlinkParagraph(text: String, relationshipID: String, colorHex: String) -> String {
+        """
+        <w:p>
+            <w:r>
+                <w:rPr><w:b/><w:color w:val="\(colorHex)"/><w:sz w:val="20"/></w:rPr>
+                <w:t xml:space="preserve"> </w:t>
+            </w:r>
+            <w:hyperlink r:id="\(relationshipID)">
+                <w:r>
+                    <w:rPr><w:b/><w:color w:val="\(colorHex)"/><w:u w:val="single"/><w:sz w:val="20"/></w:rPr>
+                    <w:t xml:space="preserve">\(text.xmlEscaped)</w:t>
+                </w:r>
+            </w:hyperlink>
+        </w:p>
+        """
+    }
+
+    private func centeredImageParagraph(relationshipID: String, imageName: String, extent: Int64) -> String {
+        """
+        <w:p>
+            <w:pPr><w:jc w:val="center"/></w:pPr>
+            <w:r>
+                \(imageDrawingXML(relationshipID: relationshipID, imageName: imageName, extent: extent))
+            </w:r>
+        </w:p>
+        """
+    }
+
+    private func invoiceHeader(title: String, brandName: String, invoiceNumber: String, accentHex: String, inkHex: String, softAccentHex: String, logoRelationshipID: String?) -> String {
         switch templateStyle {
         case .classic:
-            return logoPrefix(includesLogo: includesLogo, inkHex: inkHex) + headerTable(
+            return logoPrefix(logoRelationshipID: logoRelationshipID, inkHex: inkHex) + headerTable(
                 columnWidths: [6100, 3100],
                 borderHex: "E5E7EB",
                 topBorderHex: accentHex,
@@ -335,7 +399,7 @@ struct InvoiceDOCXExportService {
                 ]
             )
         case .premium:
-            return logoPrefix(includesLogo: includesLogo, inkHex: inkHex) + headerTable(
+            return logoPrefix(logoRelationshipID: logoRelationshipID, inkHex: inkHex) + headerTable(
                 columnWidths: [5600, 3600],
                 borderHex: "E5E7EB",
                 topBorderHex: accentHex,
@@ -345,7 +409,7 @@ struct InvoiceDOCXExportService {
                 ]
             )
         case .compact:
-            return logoPrefix(includesLogo: includesLogo, inkHex: inkHex) + headerTable(
+            return logoPrefix(logoRelationshipID: logoRelationshipID, inkHex: inkHex) + headerTable(
                 columnWidths: [6350, 2850],
                 borderHex: "E5E7EB",
                 topBorderHex: "CBD5E1",
@@ -354,7 +418,7 @@ struct InvoiceDOCXExportService {
                 ]
             )
         case .bold:
-            return logoPrefix(includesLogo: includesLogo, inkHex: inkHex) + headerTable(
+            return logoPrefix(logoRelationshipID: logoRelationshipID, inkHex: inkHex) + headerTable(
                 columnWidths: [5900, 3300],
                 borderHex: inkHex,
                 topBorderHex: accentHex,
@@ -366,13 +430,13 @@ struct InvoiceDOCXExportService {
         }
     }
 
-    private func tabulantisBadge(accentHex: String, softAccentHex: String) -> String {
+    private func brandBadge(accentHex: String, softAccentHex: String) -> String {
         headerTable(
             columnWidths: [700, 3200],
             borderHex: "E5E7EB",
             topBorderHex: "E5E7EB",
             rows: [
-                cell("TB", width: 700, bold: true, shaded: accentHex, textColor: "FFFFFF", alignment: "center", size: 18) +
+                cell("FC", width: 700, bold: true, shaded: accentHex, textColor: "FFFFFF", alignment: "center", size: 18) +
                 cell(localization.factureclickCertifiedLabel, width: 3200, bold: true, shaded: softAccentHex, textColor: accentHex, size: 18)
             ]
         ) + paragraph("", size: 10)
@@ -544,19 +608,19 @@ struct InvoiceDOCXExportService {
         """
     }
 
-    private func logoPrefix(includesLogo: Bool, inkHex: String) -> String {
-        guard includesLogo else { return "" }
+    private func logoPrefix(logoRelationshipID: String?, inkHex: String) -> String {
+        guard let logoRelationshipID else { return "" }
         return headerTable(
             columnWidths: [900, 8300],
             borderHex: "E5E7EB",
             topBorderHex: "E5E7EB",
             rows: [
-                imageCell(width: 900, shaded: templateStyle == .bold ? inkHex : "FFFFFF") + cell("", width: 8300, shaded: templateStyle == .bold ? inkHex : "FFFFFF")
+                imageCell(width: 900, shaded: templateStyle == .bold ? inkHex : "FFFFFF", relationshipID: logoRelationshipID, imageName: "Company logo") + cell("", width: 8300, shaded: templateStyle == .bold ? inkHex : "FFFFFF")
             ]
         )
     }
 
-    private func imageCell(width: Int, shaded: String) -> String {
+    private func imageCell(width: Int, shaded: String, relationshipID: String, imageName: String) -> String {
         """
         <w:tc>
             <w:tcPr>
@@ -566,31 +630,30 @@ struct InvoiceDOCXExportService {
             <w:p>
                 <w:pPr><w:jc w:val="center"/></w:pPr>
                 <w:r>
-                    \(logoDrawingXML)
+                    \(imageDrawingXML(relationshipID: relationshipID, imageName: imageName, extent: 548_640))
                 </w:r>
             </w:p>
         </w:tc>
         """
     }
 
-    private var logoDrawingXML: String {
-        let extent: Int64 = 548_640
+    private func imageDrawingXML(relationshipID: String, imageName: String, extent: Int64) -> String {
         return """
         <w:drawing>
             <wp:inline distT="0" distB="0" distL="0" distR="0">
                 <wp:extent cx="\(extent)" cy="\(extent)"/>
                 <wp:effectExtent l="0" t="0" r="0" b="0"/>
-                <wp:docPr id="1" name="Company logo"/>
+                <wp:docPr id="1" name="\(imageName.xmlEscaped)"/>
                 <wp:cNvGraphicFramePr/>
                 <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
                     <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
                         <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
                             <pic:nvPicPr>
-                                <pic:cNvPr id="1" name="company-logo"/>
+                                <pic:cNvPr id="1" name="\(imageName.xmlEscaped)"/>
                                 <pic:cNvPicPr/>
                             </pic:nvPicPr>
                             <pic:blipFill>
-                                <a:blip r:embed="rId2"/>
+                                <a:blip r:embed="\(relationshipID)"/>
                                 <a:stretch><a:fillRect/></a:stretch>
                             </pic:blipFill>
                             <pic:spPr>
@@ -602,6 +665,100 @@ struct InvoiceDOCXExportService {
                 </a:graphic>
             </wp:inline>
         </w:drawing>
+        """
+    }
+
+    private func makeDocumentAssets(
+        logo: (data: Data, fileExtension: String)?,
+        paymentOptions: [InvoicePaymentOption]
+    ) -> DOCXDocumentAssets {
+        var relationships = [
+            DOCXRelationship(
+                id: "rId1",
+                type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer",
+                target: "footer1.xml"
+            )
+        ]
+        var files = [DOCXFile]()
+        var paymentAssets = [DOCXPaymentAsset]()
+        var nextRelationshipNumber = 2
+        var logoRelationshipID: String?
+
+        if let logo {
+            let relationshipID = "rId\(nextRelationshipNumber)"
+            nextRelationshipNumber += 1
+            logoRelationshipID = relationshipID
+            relationships.append(
+                DOCXRelationship(
+                    id: relationshipID,
+                    type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+                    target: "media/company-logo.\(logo.fileExtension)"
+                )
+            )
+            files.append(DOCXFile(path: "word/media/company-logo.\(logo.fileExtension)", data: logo.data))
+        }
+
+        for (index, option) in paymentOptions.enumerated() {
+            var qrRelationshipID: String?
+            var hyperlinkRelationshipID: String?
+
+            if let qrCodePNGData = option.qrCodePNGData {
+                let relationshipID = "rId\(nextRelationshipNumber)"
+                nextRelationshipNumber += 1
+                let qrPath = "media/payment-qr-\(index + 1).png"
+                qrRelationshipID = relationshipID
+                relationships.append(
+                    DOCXRelationship(
+                        id: relationshipID,
+                        type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+                        target: qrPath
+                    )
+                )
+                files.append(DOCXFile(path: "word/\(qrPath)", data: qrCodePNGData))
+            }
+
+            if let actionURL = option.actionURL {
+                let relationshipID = "rId\(nextRelationshipNumber)"
+                nextRelationshipNumber += 1
+                hyperlinkRelationshipID = relationshipID
+                relationships.append(
+                    DOCXRelationship(
+                        id: relationshipID,
+                        type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+                        target: actionURL.absoluteString,
+                        targetMode: "External"
+                    )
+                )
+            }
+
+            paymentAssets.append(
+                DOCXPaymentAsset(
+                    option: option,
+                    qrRelationshipID: qrRelationshipID,
+                    hyperlinkRelationshipID: hyperlinkRelationshipID
+                )
+            )
+        }
+
+        return DOCXDocumentAssets(
+            relationshipsXML: documentRelationshipsXML(relationships: relationships),
+            files: files,
+            paymentAssets: paymentAssets,
+            logoRelationshipID: logoRelationshipID
+        )
+    }
+
+    private func documentRelationshipsXML(relationships: [DOCXRelationship]) -> String {
+        let relationshipXML = relationships.map { relationship in
+            let targetModeAttribute = relationship.targetMode.map { #" TargetMode="\#($0)""# } ?? ""
+            return #"<Relationship Id="\#(relationship.id)" Type="\#(relationship.type)" Target="\#(relationship.target)"\#(targetModeAttribute)/>"#
+        }.joined(separator: "\n            ")
+
+        return """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+            \(relationshipXML)
+        </Relationships>
         """
     }
 
@@ -674,6 +831,26 @@ struct InvoiceDOCXExportService {
 private struct DOCXFile {
     let path: String
     let data: Data
+}
+
+private struct DOCXRelationship {
+    let id: String
+    let type: String
+    let target: String
+    var targetMode: String? = nil
+}
+
+private struct DOCXPaymentAsset {
+    let option: InvoicePaymentOption
+    let qrRelationshipID: String?
+    let hyperlinkRelationshipID: String?
+}
+
+private struct DOCXDocumentAssets {
+    let relationshipsXML: String
+    let files: [DOCXFile]
+    let paymentAssets: [DOCXPaymentAsset]
+    let logoRelationshipID: String?
 }
 
 private struct InvoiceDOCXTemplateLayout {

@@ -44,6 +44,7 @@ For any persisted model change, confirm all of the following:
 - Existing stores are opened non-destructively
 - No silent deletion of persistent files
 - No automatic fallback that discards user data
+- Live schema source of truth: `FactureclickPersistentSchema`
 
 ## When a Bigger Change Is Needed
 
